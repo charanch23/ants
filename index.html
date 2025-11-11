@@ -1,172 +1,100 @@
 <!doctype html>
-<html lang="en">
+<html>
 <head>
   <meta charset="utf-8" />
-  <title>AI Video Generator</title>
+  <title>AI Frames→GIF</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <style>
-    :root { --accent: #2563eb; --maxw: 980px; }
-    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial; background:#f5f7fb; margin:0; padding:24px; display:flex; justify-content:center; }
-    .wrap { width:100%; max-width:var(--maxw); background:#fff; padding:18px; border-radius:12px; box-shadow:0 8px 30px rgba(12,12,18,0.06); }
-    h1{margin:0 0 8px 0;font-size:20px}
-    label{display:block;margin-top:10px;font-weight:600}
-    textarea, select, input[type="text"]{width:100%;padding:10px;border-radius:8px;border:1px solid #e6e9ef;background:#fbfdff}
-    .controls{display:flex;gap:8px;margin-top:12px;align-items:center;flex-wrap:wrap}
-    button{padding:10px 14px;border-radius:8px;border:0;cursor:pointer}
-    button.primary{background:var(--accent);color:#fff;font-weight:600}
-    button.ghost{background:#111827;color:#fff}
-    #status{margin-left:8px;font-weight:600;color:#0f1724}
-    #gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;margin-top:16px}
-    .card{border:1px solid #eef2ff;padding:10px;border-radius:10px;background:#fff;display:flex;flex-direction:column;gap:10px}
-    video{width:100%;border-radius:8px;background:#000}
-    .rowBtns{display:flex;gap:8px}
-    .small{font-size:13px;color:#617;word-break:break-all}
+    body{font-family:system-ui;padding:18px;background:#f6f8fb}
+    .box{max-width:900px;margin:0 auto;background:#fff;padding:18px;border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,0.06)}
+    textarea{width:100%;height:80px;padding:8px;border-radius:8px}
+    button{padding:10px 14px;border-radius:8px;background:#2563eb;color:#fff;border:0;cursor:pointer}
+    #preview img, #preview video{max-width:100%;display:block;margin-top:12px;border-radius:8px}
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <h1>AI Video Generator</h1>
-    <p style="margin:0;color:#475569">Enter a prompt and generate a short video clip. Backend: <code>https://cha-7ytt.onrender.com</code></p>
+  <div class="box">
+    <h2>Generate short "video" GIF from frames</h2>
+    <p>Enter prompt and generate frames using HF image model, then assemble a GIF (free).</p>
+    <label>Prompt</label>
+    <textarea id="prompt">A cinematic bird flying over a lake at sunrise, realistic</textarea>
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <label>Frames: <input id="frames" type="number" value="8" min="4" max="24" style="width:76px"></label>
+      <label>Size:
+        <select id="size"><option>256x256</option><option selected>512x512</option></select>
+      </label>
+      <button id="go">Generate GIF</button>
+      <div id="status" style="margin-left:12px;font-weight:600"></div>
+    </div>
 
-    <form id="form" style="margin-top:12px">
-      <label for="prompt">Prompt</label>
-      <textarea id="prompt" rows="3" placeholder="A bird flying over a lake at sunrise, cinematic"></textarea>
-
-      <label for="size">Size</label>
-      <select id="size">
-        <option value="256x256">256 × 256 (recommended)</option>
-        <option value="512x512">512 × 512</option>
-      </select>
-
-      <div class="controls">
-        <button id="generate" class="primary" type="submit">Generate Video</button>
-        <button id="clear" class="ghost" type="button">Clear Gallery</button>
-        <div id="status"></div>
-      </div>
-    </form>
-
-    <div id="gallery"></div>
+    <div id="preview"></div>
   </div>
 
+  <!-- gif.js library (web worker) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.worker.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.min.js"></script>
+
   <script>
-    // -----------------------
-    // CONFIG: set backend URL
-    // -----------------------
-    const BACKEND_URL = 'https://cha-7ytt.onrender.com'; // <--- your backend URL
-
-    // UI Elements
-    const form = document.getElementById('form');
-    const promptEl = document.getElementById('prompt');
-    const sizeEl = document.getElementById('size');
-    const generateBtn = document.getElementById('generate');
-    const clearBtn = document.getElementById('clear');
-    const gallery = document.getElementById('gallery');
+    const BACKEND_URL = 'https://cha-7ytt.onrender.com'; // <-- your backend
+    const btn = document.getElementById('go');
     const status = document.getElementById('status');
+    const preview = document.getElementById('preview');
 
-    function setStatus(text, isError=false) {
-      status.textContent = text || '';
-      status.style.color = isError ? '#b91c1c' : '#0f1724';
-    }
+    function setStatus(t){ status.textContent = t || ''; }
 
-    function createCard() {
-      const c = document.createElement('div'); c.className = 'card';
-      return c;
-    }
+    btn.addEventListener('click', async () => {
+      const prompt = document.getElementById('prompt').value.trim();
+      const frames = parseInt(document.getElementById('frames').value||8,10);
+      const size = document.getElementById('size').value;
+      if (!prompt) return alert('Enter prompt');
 
-    function addVideoToGallery(videoSrc, promptText, size) {
-      const card = createCard();
-      const vid = document.createElement('video');
-      vid.src = videoSrc;
-      vid.controls = true;
-      vid.autoplay = false;
-      vid.loop = true;
-      card.appendChild(vid);
+      setStatus('Requesting frames...');
+      preview.innerHTML = '';
+      btn.disabled = true;
 
-      const row = document.createElement('div'); row.className = 'rowBtns';
-      const openBtn = document.createElement('button'); openBtn.textContent = 'Open';
-      openBtn.onclick = () => window.open(videoSrc, '_blank');
-      const dlBtn = document.createElement('button'); dlBtn.textContent = 'Download';
-      dlBtn.onclick = () => downloadFile(videoSrc, 'ai-video.mp4');
-
-      row.appendChild(openBtn); row.appendChild(dlBtn);
-
-      const info = document.createElement('div'); info.className = 'small';
-      info.textContent = `Prompt: ${promptText} / Size: ${size}`;
-
-      card.appendChild(row); card.appendChild(info);
-      gallery.prepend(card);
-    }
-
-    function downloadFile(url, filename) {
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-    }
-
-    async function requestVideo(prompt, size) {
-      const payload = { prompt, size };
-      const controller = new AbortController();
-      const timeoutId = setTimeout(()=>controller.abort(), 120000);
       try {
-        const resp = await fetch(BACKEND_URL + '/api/generate', {
+        const resp = await fetch(BACKEND_URL + '/api/generate-frames', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-          signal: controller.signal
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ prompt, frames, size })
         });
-        clearTimeout(timeoutId);
         if (!resp.ok) {
-          let err = 'HTTP ' + resp.status;
-          try { const j = await resp.json(); err = j.error || JSON.stringify(j); } catch(e){}
-          throw new Error(err);
+          const j = await resp.json().catch(()=>null);
+          throw new Error((j && j.error) ? j.error : 'HTTP ' + resp.status);
         }
-        return await resp.json();
-      } catch (err) {
-        clearTimeout(timeoutId);
-        throw err;
-      }
-    }
+        const data = await resp.json();
+        const imgs = data.frames || [];
+        if (!imgs || imgs.length === 0) throw new Error('No frames returned');
 
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const prompt = promptEl.value.trim();
-      if (!prompt) return alert('Enter a prompt');
-      const size = sizeEl.value;
+        setStatus('Assembling GIF (' + imgs.length + ' frames)...');
 
-      generateBtn.disabled = true;
-      setStatus('Generating video...');
-
-      try {
-        const data = await requestVideo(prompt, size);
-        // backend returns { videos: [...] } or { videos: [dataUrl or url] }
-        const vids = data?.videos || data?.videos || [];
-        if (!vids || vids.length === 0) {
-          throw new Error('No video returned by backend: ' + JSON.stringify(data));
+        // Create GIF using gif.js
+        const gif = new GIF({ workers: 2, quality: 10, workerScript: 'https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.worker.min.js' });
+        // Add each frame (we'll create an Image for each)
+        for (let i=0;i<imgs.length;i++){
+          const img = new Image();
+          img.src = imgs[i];
+          // Await load before adding frame
+          await new Promise((resolve, reject) => {
+            img.onload = () => { gif.addFrame(img, {delay: 120}); resolve(); };
+            img.onerror = () => { console.warn('Frame load err', i); resolve(); };
+          });
         }
-        vids.forEach(vsrc => addVideoToGallery(vsrc, prompt, size));
-        setStatus('Video(s) received.');
+
+        // Render gif and show
+        gif.on('finished', function(blob){
+          const url = URL.createObjectURL(blob);
+          preview.innerHTML = `<h4>Result GIF</h4><img src="${url}" alt="gif"> <p><a href="${url}" download="ai-clip.gif">Download GIF</a></p>`;
+          setStatus('Done');
+        });
+
+        gif.render();
       } catch (err) {
         console.error(err);
-        setStatus('Error: ' + (err?.message || err), true);
-        alert('Error generating video: ' + (err?.message || err));
+        setStatus('Error: ' + (err.message || err));
+        alert('Error: ' + (err.message || err));
       } finally {
-        generateBtn.disabled = false;
-        setTimeout(()=>setStatus(''), 6000);
-      }
-    });
-
-    clearBtn.addEventListener('click', ()=> {
-      if (!confirm('Clear gallery?')) return;
-      gallery.innerHTML = '';
-    });
-
-    // optional: Ctrl+Enter submits
-    promptEl.addEventListener('keydown', (e)=> {
-      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-        e.preventDefault(); generateBtn.click();
+        btn.disabled = false;
       }
     });
   </script>
