@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>AI Video Generator</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    :root { --accent: #2563eb; --maxw: 980px; }
+    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial; background:#f5f7fb; margin:0; padding:24px; display:flex; justify-content:center; }
+    .wrap { width:100%; max-width:var(--maxw); background:#fff; padding:18px; border-radius:12px; box-shadow:0 8px 30px rgba(12,12,18,0.06); }
+    h1{margin:0 0 8px 0;font-size:20px}
+    label{display:block;margin-top:10px;font-weight:600}
+    textarea, select, input[type="text"]{width:100%;padding:10px;border-radius:8px;border:1px solid #e6e9ef;background:#fbfdff}
+    .controls{display:flex;gap:8px;margin-top:12px;align-items:center;flex-wrap:wrap}
+    button{padding:10px 14px;border-radius:8px;border:0;cursor:pointer}
+    button.primary{background:var(--accent);color:#fff;font-weight:600}
+    button.ghost{background:#111827;color:#fff}
+    #status{margin-left:8px;font-weight:600;color:#0f1724}
+    #gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;margin-top:16px}
+    .card{border:1px solid #eef2ff;padding:10px;border-radius:10px;background:#fff;display:flex;flex-direction:column;gap:10px}
+    video{width:100%;border-radius:8px;background:#000}
+    .rowBtns{display:flex;gap:8px}
+    .small{font-size:13px;color:#617;word-break:break-all}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>AI Video Generator</h1>
+    <p style="margin:0;color:#475569">Enter a prompt and generate a short video clip. Backend: <code>https://cha-7ytt.onrender.com</code></p>
+
+    <form id="form" style="margin-top:12px">
+      <label for="prompt">Prompt</label>
+      <textarea id="prompt" rows="3" placeholder="A bird flying over a lake at sunrise, cinematic"></textarea>
+
+      <label for="size">Size</label>
+      <select id="size">
+        <option value="256x256">256 × 256 (recommended)</option>
+        <option value="512x512">512 × 512</option>
+      </select>
+
+      <div class="controls">
+        <button id="generate" class="primary" type="submit">Generate Video</button>
+        <button id="clear" class="ghost" type="button">Clear Gallery</button>
+        <div id="status"></div>
+      </div>
+    </form>
+
+    <div id="gallery"></div>
+  </div>
+
+  <script>
+    // -----------------------
+    // CONFIG: set backend URL
+    // -----------------------
+    const BACKEND_URL = 'https://cha-7ytt.onrender.com'; // <--- your backend URL
+
+    // UI Elements
+    const form = document.getElementById('form');
+    const promptEl = document.getElementById('prompt');
+    const sizeEl = document.getElementById('size');
+    const generateBtn = document.getElementById('generate');
+    const clearBtn = document.getElementById('clear');
+    const gallery = document.getElementById('gallery');
+    const status = document.getElementById('status');
+
+    function setStatus(text, isError=false) {
+      status.textContent = text || '';
+      status.style.color = isError ? '#b91c1c' : '#0f1724';
+    }
+
+    function createCard() {
+      const c = document.createElement('div'); c.className = 'card';
+      return c;
+    }
+
+    function addVideoToGallery(videoSrc, promptText, size) {
+      const card = createCard();
+      const vid = document.createElement('video');
+      vid.src = videoSrc;
+      vid.controls = true;
+      vid.autoplay = false;
+      vid.loop = true;
+      card.appendChild(vid);
+
+      const row = document.createElement('div'); row.className = 'rowBtns';
+      const openBtn = document.createElement('button'); openBtn.textContent = 'Open';
+      openBtn.onclick = () => window.open(videoSrc, '_blank');
+      const dlBtn = document.createElement('button'); dlBtn.textContent = 'Download';
+      dlBtn.onclick = () => downloadFile(videoSrc, 'ai-video.mp4');
+
+      row.appendChild(openBtn); row.appendChild(dlBtn);
+
+      const info = document.createElement('div'); info.className = 'small';
+      info.textContent = `Prompt: ${promptText} / Size: ${size}`;
+
+      card.appendChild(row); card.appendChild(info);
+      gallery.prepend(card);
+    }
+
+    function downloadFile(url, filename) {
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }
+
+    async function requestVideo(prompt, size) {
+      const payload = { prompt, size };
+      const controller = new AbortController();
+      const timeoutId = setTimeout(()=>controller.abort(), 120000);
+      try {
+        const resp = await fetch(BACKEND_URL + '/api/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        if (!resp.ok) {
+          let err = 'HTTP ' + resp.status;
+          try { const j = await resp.json(); err = j.error || JSON.stringify(j); } catch(e){}
+          throw new Error(err);
+        }
+        return await resp.json();
+      } catch (err) {
+        clearTimeout(timeoutId);
+        throw err;
+      }
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const prompt = promptEl.value.trim();
+      if (!prompt) return alert('Enter a prompt');
+      const size = sizeEl.value;
+
+      generateBtn.disabled = true;
+      setStatus('Generating video...');
+
+      try {
+        const data = await requestVideo(prompt, size);
+        // backend returns { videos: [...] } or { videos: [dataUrl or url] }
+        const vids = data?.videos || data?.videos || [];
+        if (!vids || vids.length === 0) {
+          throw new Error('No video returned by backend: ' + JSON.stringify(data));
+        }
+        vids.forEach(vsrc => addVideoToGallery(vsrc, prompt, size));
+        setStatus('Video(s) received.');
+      } catch (err) {
+        console.error(err);
+        setStatus('Error: ' + (err?.message || err), true);
+        alert('Error generating video: ' + (err?.message || err));
+      } finally {
+        generateBtn.disabled = false;
+        setTimeout(()=>setStatus(''), 6000);
+      }
+    });
+
+    clearBtn.addEventListener('click', ()=> {
+      if (!confirm('Clear gallery?')) return;
+      gallery.innerHTML = '';
+    });
+
+    // optional: Ctrl+Enter submits
+    promptEl.addEventListener('keydown', (e)=> {
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault(); generateBtn.click();
+      }
+    });
+  </script>
+</body>
+</html>
+
+
