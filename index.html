@@ -144,51 +144,86 @@
     </div>
 
     <div id="status"></div>
-
     <div id="preview"></div>
   </div>
 
-  <!-- gif.js libraries (fixes "GIF is not defined") -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.worker.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.min.js"></script>
+  <!-- ✅ Reliable gif.js CDN (must load before your script) -->
+  <script src="https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.worker.js"></script>
 
   <script>
-    const BACKEND_URL = "https://cha-7ytt.onrender.com"; // your live backend
-    const btn = document.getElementById("generateBtn");
-    const statusEl = document.getElementById("status");
-    const preview = document.getElementById("preview");
+    window.addEventListener("load", () => {
+      const BACKEND_URL = "https://cha-7ytt.onrender.com"; // your backend
+      const btn = document.getElementById("generateBtn");
+      const statusEl = document.getElementById("status");
+      const preview = document.getElementById("preview");
 
-    function setStatus(text) {
-      statusEl.textContent = text;
-    }
-
-    btn.addEventListener("click", async () => {
-      const prompt = document.getElementById("prompt").value.trim();
-      const frames = parseInt(document.getElementById("frames").value) || 8;
-      const size = document.getElementById("size").value;
-
-      if (!prompt) {
-        alert("Enter a prompt!");
-        return;
+      function setStatus(text) {
+        statusEl.textContent = text;
       }
 
-      preview.innerHTML = "";
-      setStatus("Generating video, please wait...");
-      const spinner = document.createElement("div");
-      spinner.className = "spinner";
-      preview.appendChild(spinner);
+      btn.addEventListener("click", async () => {
+        const prompt = document.getElementById("prompt").value.trim();
+        const frames = parseInt(document.getElementById("frames").value) || 8;
+        const size = document.getElementById("size").value;
 
-      btn.disabled = true;
-
-      try {
-        const res = await fetch(`${BACKEND_URL}/api/generate-video`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt, size, frames }),
-        });
-
-        const data = await res.json();
+        if (!prompt) return alert("Enter a prompt!");
 
         preview.innerHTML = "";
+        setStatus("Generating video... This may take 30–60 seconds ⏳");
+        const spinner = document.createElement("div");
+        spinner.className = "spinner";
+        preview.appendChild(spinner);
+        btn.disabled = true;
 
-        if (data.videos && data.videos.length > 0) {
+        try {
+          const res = await fetch(`${BACKEND_URL}/api/generate-video`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ prompt, size, frames }),
+          });
+          const data = await res.json();
+
+          preview.innerHTML = "";
+
+          if (data.videos && data.videos.length > 0) {
+            setStatus("✅ Video generated successfully!");
+            const video = document.createElement("video");
+            video.src = data.videos[0];
+            video.controls = true;
+            video.loop = true;
+            preview.appendChild(video);
+
+            const a = document.createElement("a");
+            a.href = data.videos[0];
+            a.download = "ai-video.mp4";
+            a.className = "download";
+            a.textContent = "⬇️ Download Video";
+            preview.appendChild(a);
+          } else if (data.gif) {
+            setStatus("✅ GIF generated successfully!");
+            const img = document.createElement("img");
+            img.src = data.gif;
+            preview.appendChild(img);
+
+            const a = document.createElement("a");
+            a.href = data.gif;
+            a.download = "ai-video.gif";
+            a.className = "download";
+            a.textContent = "⬇️ Download GIF";
+            preview.appendChild(a);
+          } else {
+            setStatus("⚠️ No video or GIF returned. Try again.");
+            console.log(data);
+          }
+        } catch (err) {
+          console.error(err);
+          setStatus("❌ Error: " + err.message);
+        } finally {
+          btn.disabled = false;
+        }
+      });
+    });
+  </script>
+</body>
+</html>
