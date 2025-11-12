@@ -1,102 +1,194 @@
-<!doctype html>
-<html>
+<!DOCTYPE html>
+<html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <title>AI Frames→GIF</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Video Generator</title>
   <style>
-    body{font-family:system-ui;padding:18px;background:#f6f8fb}
-    .box{max-width:900px;margin:0 auto;background:#fff;padding:18px;border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,0.06)}
-    textarea{width:100%;height:80px;padding:8px;border-radius:8px}
-    button{padding:10px 14px;border-radius:8px;background:#2563eb;color:#fff;border:0;cursor:pointer}
-    #preview img, #preview video{max-width:100%;display:block;margin-top:12px;border-radius:8px}
+    body {
+      font-family: "Segoe UI", sans-serif;
+      background: #f4f6fb;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      min-height: 100vh;
+    }
+
+    .container {
+      background: white;
+      width: 95%;
+      max-width: 900px;
+      margin-top: 40px;
+      border-radius: 12px;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.1);
+      padding: 24px;
+    }
+
+    h1 {
+      text-align: center;
+      color: #2563eb;
+      font-size: 26px;
+    }
+
+    textarea {
+      width: 100%;
+      height: 80px;
+      font-size: 16px;
+      padding: 8px;
+      border-radius: 8px;
+      border: 1px solid #ccc;
+      resize: vertical;
+      margin-top: 10px;
+    }
+
+    button {
+      background: #2563eb;
+      color: white;
+      border: none;
+      padding: 10px 16px;
+      font-size: 16px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: 0.2s;
+    }
+
+    button:hover {
+      background: #1e4fd1;
+    }
+
+    .options {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 12px;
+      align-items: center;
+      justify-content: center;
+    }
+
+    select, input {
+      font-size: 15px;
+      padding: 6px 8px;
+      border-radius: 6px;
+      border: 1px solid #ccc;
+    }
+
+    #status {
+      margin-top: 10px;
+      font-weight: 600;
+      color: #444;
+      text-align: center;
+    }
+
+    #preview {
+      margin-top: 24px;
+      text-align: center;
+    }
+
+    #preview img, #preview video {
+      max-width: 100%;
+      border-radius: 12px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+    }
+
+    .spinner {
+      display: inline-block;
+      width: 40px;
+      height: 40px;
+      border: 4px solid rgba(0, 0, 0, 0.1);
+      border-left-color: #2563eb;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-top: 20px;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    a.download {
+      display: inline-block;
+      margin-top: 12px;
+      background: #16a34a;
+      color: white;
+      text-decoration: none;
+      padding: 8px 12px;
+      border-radius: 6px;
+    }
+
+    a.download:hover {
+      background: #138b3f;
+    }
   </style>
 </head>
 <body>
-  <div class="box">
-    <h2>Generate short "video" GIF from frames</h2>
-    <p>Enter prompt and generate frames using HF image model, then assemble a GIF (free).</p>
-    <label>Prompt</label>
-    <textarea id="prompt">A cinematic bird flying over a lake at sunrise, realistic</textarea>
-    <div style="display:flex;gap:8px;margin-top:8px">
-      <label>Frames: <input id="frames" type="number" value="8" min="4" max="24" style="width:76px"></label>
-      <label>Size:
-        <select id="size"><option>256x256</option><option selected>512x512</option></select>
+  <div class="container">
+    <h1>🎬 AI Video Generator</h1>
+    <p style="text-align:center;color:#555;">Generate short AI videos (or animated GIFs) using Hugging Face free models</p>
+    <textarea id="prompt">A cinematic bird flying over a lake at sunrise</textarea>
+
+    <div class="options">
+      <label>Frames: 
+        <input type="number" id="frames" value="8" min="4" max="16" />
       </label>
-      <button id="go">Generate GIF</button>
-      <div id="status" style="margin-left:12px;font-weight:600"></div>
+      <label>Size:
+        <select id="size">
+          <option>256x256</option>
+          <option selected>512x512</option>
+        </select>
+      </label>
+      <button id="generateBtn">🎨 Generate Video</button>
     </div>
+
+    <div id="status"></div>
 
     <div id="preview"></div>
   </div>
 
-  <!-- gif.js library (web worker) -->
+  <!-- gif.js libraries (fixes "GIF is not defined") -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.worker.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.min.js"></script>
 
   <script>
-    const BACKEND_URL = 'https://cha-7ytt.onrender.com'; // <-- your backend
-    const btn = document.getElementById('go');
-    const status = document.getElementById('status');
-    const preview = document.getElementById('preview');
+    const BACKEND_URL = "https://cha-7ytt.onrender.com"; // your live backend
+    const btn = document.getElementById("generateBtn");
+    const statusEl = document.getElementById("status");
+    const preview = document.getElementById("preview");
 
-    function setStatus(t){ status.textContent = t || ''; }
+    function setStatus(text) {
+      statusEl.textContent = text;
+    }
 
-    btn.addEventListener('click', async () => {
-      const prompt = document.getElementById('prompt').value.trim();
-      const frames = parseInt(document.getElementById('frames').value||8,10);
-      const size = document.getElementById('size').value;
-      if (!prompt) return alert('Enter prompt');
+    btn.addEventListener("click", async () => {
+      const prompt = document.getElementById("prompt").value.trim();
+      const frames = parseInt(document.getElementById("frames").value) || 8;
+      const size = document.getElementById("size").value;
 
-      setStatus('Requesting frames...');
-      preview.innerHTML = '';
+      if (!prompt) {
+        alert("Enter a prompt!");
+        return;
+      }
+
+      preview.innerHTML = "";
+      setStatus("Generating video, please wait...");
+      const spinner = document.createElement("div");
+      spinner.className = "spinner";
+      preview.appendChild(spinner);
+
       btn.disabled = true;
 
       try {
-        const resp = await fetch(BACKEND_URL + '/api/generate-frames', {
-          method: 'POST',
-          headers: {'Content-Type':'application/json'},
-          body: JSON.stringify({ prompt, frames, size })
-        });
-        if (!resp.ok) {
-          const j = await resp.json().catch(()=>null);
-          throw new Error((j && j.error) ? j.error : 'HTTP ' + resp.status);
-        }
-        const data = await resp.json();
-        const imgs = data.frames || [];
-        if (!imgs || imgs.length === 0) throw new Error('No frames returned');
-
-        setStatus('Assembling GIF (' + imgs.length + ' frames)...');
-
-        // Create GIF using gif.js
-        const gif = new GIF({ workers: 2, quality: 10, workerScript: 'https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.worker.min.js' });
-        // Add each frame (we'll create an Image for each)
-        for (let i=0;i<imgs.length;i++){
-          const img = new Image();
-          img.src = imgs[i];
-          // Await load before adding frame
-          await new Promise((resolve, reject) => {
-            img.onload = () => { gif.addFrame(img, {delay: 120}); resolve(); };
-            img.onerror = () => { console.warn('Frame load err', i); resolve(); };
-          });
-        }
-
-        // Render gif and show
-        gif.on('finished', function(blob){
-          const url = URL.createObjectURL(blob);
-          preview.innerHTML = `<h4>Result GIF</h4><img src="${url}" alt="gif"> <p><a href="${url}" download="ai-clip.gif">Download GIF</a></p>`;
-          setStatus('Done');
+        const res = await fetch(`${BACKEND_URL}/api/generate-video`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt, size, frames }),
         });
 
-        gif.render();
-      } catch (err) {
-        console.error(err);
-        setStatus('Error: ' + (err.message || err));
-        alert('Error: ' + (err.message || err));
-      } finally {
-        btn.disabled = false;
-      }
-    });
-  </script>
-</body>
-</html>
+        const data = await res.json();
+
+        preview.innerHTML = "";
+
+        if (data.videos && data.videos.length > 0) {
